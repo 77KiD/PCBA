@@ -10,7 +10,7 @@ from robot_arm_control import RobotArmControl # 假設 RobotArmControl 類已準
 
 # --- 配置參數 ---
 # Yolov12 模型權重路徑 (!!!需要您修改!!!)
-YOLO_WEIGHTS_PATH = "path/to/your/yolov12_weights.pt"
+YOLO_WEIGHTS_PATH = r"C:\Users\s1593\Downloads\PCBA-main\PCBA-main\YOLO12\runs\detect\pcb_yolo12x_retry\weights\best.pt"
 # 例如: YOLO_WEIGHTS_PATH = "YOLO12/runs/detect/pcb_yolo12x_50epochs/weights/best.pt"
 if not os.path.exists(YOLO_WEIGHTS_PATH):
     print(f"警告：YOLO 模型權重檔案 '{YOLO_WEIGHTS_PATH}' 不存在。請在 main.py 中設定正確的路徑。")
