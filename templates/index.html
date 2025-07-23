@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCBA 智能檢測系統</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container-fluid mt-4">
+        <h1 class="text-center mb-4">PCBA 智能檢測與自動分類系統</h1>
+        <div class="row">
+            <!-- Left Panel: Video Stream and Controls -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📷 即時影像</h5>
+                    </div>
+                    <div class="card-body">
+                        <img id="video-stream" src="" alt="Video Stream">
+                    </div>
+                </div>
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h5>⚙️ 系統控制</h5>
+                    </div>
+                    <div class="card-body">
+                        <button id="start-btn" class="btn btn-success">開始自動化流程</button>
+                        <button id="stop-btn" class="btn btn-danger">停止</button>
+                        <hr>
+                        <h6>手動控制</h6>
+                        <button id="manual-conveyor-btn" class="btn btn-primary">移動輸送帶</button>
+                        <button id="manual-arm-home-btn" class="btn btn-info">機械手臂歸位</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Status and Logs -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📊 狀態與結果</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>系統狀態:</strong> <span id="system-status" class="badge badge-secondary">待機中</span></p>
+                        <p><strong>最新結果:</strong> <span id="detection-result">-</span></p>
+                        <p><strong>瑕疵類別:</strong> <span id="defect-type">-</span></p>
+                    </div>
+                </div>
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h5>📝 事件日誌</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="log-container" class="log-container">
+                            <!-- Logs will be appended here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Connect to the Socket.IO server
+            const socket = io();
+
+            // --- Socket.IO Event Handlers ---
+            socket.on('connect', function() {
+                addLog('成功連接到伺服器');
+            });
+
+            socket.on('update_status', function(data) {
+                $('#system-status').text(data.status).attr('class', 'badge ' + data.badge);
+                addLog('系統狀態更新: ' + data.status);
+            });
+
+            socket.on('video_frame', function(data) {
+                // Update the image source with the new frame
+                $('#video-stream').attr('src', 'data:image/jpeg;base64,' + data.frame);
+            });
+
+            socket.on('detection_result', function(data) {
+                $('#detection-result').text(data.result);
+                $('#defect-type').text(data.defect_type || '-');
+                addLog(`檢測結果: ${data.result}, 瑕疵: ${data.defect_type || '無'}`);
+            });
+
+            socket.on('log', function(data) {
+                addLog(data.message);
+            });
+
+            // --- UI Event Handlers ---
+            $('#start-btn').click(function() {
+                socket.emit('control_event', { 'action': 'start' });
+            });
+
+            $('#stop-btn').click(function() {
+                socket.emit('control_event', { 'action': 'stop' });
+            });
+
+            $('#manual-conveyor-btn').click(function() {
+                socket.emit('control_event', { 'action': 'manual_conveyor' });
+            });
+
+            $('#manual-arm-home-btn').click(function() {
+                socket.emit('control_event', { 'action': 'manual_arm_home' });
+            });
+
+            // --- Helper Functions ---
+            function addLog(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                $('#log-container').append(`<p>[${timestamp}] ${message}</p>`);
+                // Auto-scroll to the bottom
+                $('#log-container').scrollTop($('#log-container')[0].scrollHeight);
+            }
+        });
+    </script>
+</body>
+</html>

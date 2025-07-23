@@ -1,0 +1,15 @@
+# Core Libraries
+Flask
+Flask-SocketIO
+ultralytics
+numpy
+opencv-python
+
+# Hardware Control (for Jetson)
+# Note: These might require special installation on Jetson
+# RPi.GPIO
+# adafruit-circuitpython-pca9685
+# adafruit-circuitpython-servokit
+
+# Optional for development
+pyserial

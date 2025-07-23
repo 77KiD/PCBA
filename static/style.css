@@ -1,0 +1,61 @@
+body {
+    background-color: #f4f4f9;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.card-header {
+    background-color: #007bff;
+    color: white;
+    font-weight: bold;
+}
+
+#video-stream {
+    width: 100%;
+    height: auto;
+    border: 1px solid #dee2e6;
+    border-radius: .25rem;
+    background-color: #000;
+}
+
+.log-container {
+    height: 350px;
+    overflow-y: scroll;
+    border: 1px solid #dee2e6;
+    padding: 15px;
+    background: #fff;
+    border-radius: .25rem;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    line-height: 1.6;
+}
+
+.log-container p {
+    margin-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+#system-status.badge-success {
+    background-color: #28a745;
+}
+
+#system-status.badge-danger {
+    background-color: #dc3545;
+}
+
+#system-status.badge-warning {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+#system-status.badge-primary {
+    background-color: #007bff;
+}
+
+#system-status.badge-secondary {
+    background-color: #6c757d;
+}
+
+.btn {
+    font-weight: bold;
+}
