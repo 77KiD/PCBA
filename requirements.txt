@@ -1,0 +1,21 @@
+# Deep Learning and Computer Vision
+# Note: Installing torch on a Jetson device often requires a specific version
+# compatible with the Jetpack version. The user should consult NVIDIA's documentation.
+# Ultralytics will often install a compatible torch version if one is not present.
+ultralytics
+opencv-python
+
+# GUI Framework
+PyQt5
+
+# Hardware Control
+# For Jetson Orin Nano - this package is usually pre-installed with Jetpack
+# or requires a specific installation method.
+# pip install Jetson.GPIO
+# Jetson.GPIO
+
+# For serial communication with devices like Arduino or PLCs
+pyserial
+
+# General utility
+numpy
