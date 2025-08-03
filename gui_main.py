@@ -4,8 +4,9 @@ import time
 from datetime import datetime
 import cv2
 import torch
+import numpy as np
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QLabel
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
@@ -54,20 +55,19 @@ PRODUCT_TO_ZONE_MAP = {
 }
 DEFAULT_ZONE_FOR_UNKNOWN = 0 # 0 代表廢料區或不做處理
 
+# --- 影像前處理配置 ---
+PREPROCESSING_ENABLED = True # 設定為 True 來啟用前處理
+HIGH_BOOST_K = 1.5 # 高增幅濾波的 k 值
+
 # ======================================================================
 # --- 自動化流程工作線程 ---
 # ======================================================================
 class AutomationWorker(QThread):
     # --- 信號定義 ---
-    # 更新狀態文字 (str: 訊息, str: 顏色)
     status_updated = pyqtSignal(QLabel, str, str)
-    # 更新圖片 (QPixmap)
     image_updated = pyqtSignal(QPixmap)
-    # 新增日誌 (list of str)
     log_added = pyqtSignal(list)
-    # 更新統計數據
     stats_updated = pyqtSignal(dict)
-    # 流程完成
     finished = pyqtSignal()
 
     def __init__(self, detector, conveyor, robot_arm):
@@ -78,6 +78,43 @@ class AutomationWorker(QThread):
         self.is_running = False
         self.stats = {'total': 0, 'pass': 0, 'defect': 0}
 
+    def _preprocess_image(self, input_path):
+        """對影像進行邊緣偵測和高增幅濾波"""
+        try:
+            self.log_event("影像前處理中...", "info")
+            img = cv2.imread(input_path)
+            if img is None:
+                self.log_event(f"讀取影像失敗: {input_path}", "error")
+                return input_path, False
+
+            # 1. Canny 邊緣偵測 (主要用於視覺化或作為一個特徵)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            edges = cv2.Canny(gray, 100, 200)
+
+            # 2. 高增幅濾波 (High-Boost Filtering)
+            # 創建一個模糊版本的影像
+            blurred = cv2.GaussianBlur(img, (7, 7), 0)
+            # 計算遮罩 (原始影像 - 模糊影像)
+            mask = cv2.subtract(img, blurred)
+            # 將遮罩加權後加回到原始影像
+            high_boost_img = cv2.addWeighted(img, 1.0, mask, HIGH_BOOST_K, 0)
+
+            # 建立儲存目錄
+            output_dir = "processed_images"
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            # 儲存處理後的影像
+            filename = os.path.basename(input_path)
+            output_path = os.path.join(output_dir, f"processed_{filename}")
+            cv2.imwrite(output_path, high_boost_img)
+
+            self.log_event("影像前處理完成", "success")
+            return output_path, True
+        except Exception as e:
+            self.log_event(f"影像前處理失敗: {e}", "error")
+            return input_path, False
+
     def run(self):
         self.is_running = True
         while self.is_running:
@@ -85,46 +122,47 @@ class AutomationWorker(QThread):
 
             # --- 1. 等待產品 & 影像擷取 ---
             self.log_event("等待產品觸發...", "info")
-            # 在實際應用中，這裡應該由一個外部感測器觸發，或者輸送帶持續運行
-            # 為簡化流程，我們假設輸送帶先載入一個物品
-            # self.conveyor.start_forward()
-            # time.sleep(2) # 示意移動
-            # self.conveyor.stop()
-            # 這裡可以加入一個光電感測器來觸發拍照
+            time.sleep(1) # 示意等待
 
             self.status_updated.emit(self.parent().ui.camera_status, "相機狀態：🟡 擷取中...", "orange")
             image_path = capture_image(output_dir="live_captured_images")
             if not image_path:
                 self.log_event("影像擷取失敗", "error")
                 self.status_updated.emit(self.parent().ui.camera_status, "相機狀態：🔴 失敗", "red")
-                time.sleep(1)
                 continue
 
             self.log_event(f"影像擷取成功: {os.path.basename(image_path)}", "info")
-            self.update_display_image(image_path)
             self.status_updated.emit(self.parent().ui.camera_status, "相機狀態：🟢 正常", "green")
 
-            # --- 2. YOLO 推論 ---
+            # --- 2. 影像前處理 ---
+            path_for_yolo = image_path
+            if PREPROCESSING_ENABLED:
+                processed_path, success = self._preprocess_image(image_path)
+                if success:
+                    path_for_yolo = processed_path
+
+            # 更新 GUI 上的圖片
+            self.update_display_image(path_for_yolo)
+
+            # --- 3. YOLO 推論 ---
             self.log_event("YOLOv12 推論中...", "info")
-            detections = self.detector.detect(image_path)
+            detections = self.detector.detect(path_for_yolo)
             self.stats['total'] += 1
 
             if not detections:
                 self.log_event("未偵測到任何物件", "warning")
                 self.stats['pass'] += 1 # 假設沒偵測到=良品
                 self.update_stats_display()
-                continue # 繼續下一個循環
+                continue
 
-            # --- 3. 處理偵測結果 ---
-            best_detection = detections[0] # 取信心度最高的
+            # --- 4. 處理偵測結果 ---
+            best_detection = detections[0]
             label = best_detection['label']
             confidence = best_detection['confidence']
             self.log_event(f"偵測到: {label} (信心度: {confidence:.2f})", "success")
+            self.draw_detections_on_image(path_for_yolo, detections)
 
-            # 畫出檢測框並更新圖片
-            self.draw_detections(image_path, detections)
-
-            # --- 4. 決策與硬體控制 ---
+            # --- 5. 決策與硬體控制 ---
             target_zone = PRODUCT_TO_ZONE_MAP.get(label, DEFAULT_ZONE_FOR_UNKNOWN)
             if target_zone == 0:
                 self.log_event(f"未知類別 '{label}'，移至廢料區", "warning")
@@ -133,7 +171,7 @@ class AutomationWorker(QThread):
                 self.log_event(f"產品 '{label}'，移至區域 {target_zone}", "info")
                 self.stats['pass'] += 1
 
-            # --- 5. 輸送帶移動 ---
+            # --- 6. 輸送帶移動 ---
             self.status_updated.emit(self.parent().ui.conveyor_status, "輸送帶狀態：🟡 移動中...", "orange")
             if self.conveyor.move_to_pickup_point():
                 self.log_event("產品已到達夾取點", "info")
@@ -143,25 +181,13 @@ class AutomationWorker(QThread):
                 self.status_updated.emit(self.parent().ui.conveyor_status, "輸送帶狀態：🔴 錯誤", "red")
                 continue
 
-            # --- 6. 機械手臂動作 ---
+            # --- 7. 機械手臂動作 ---
             self.status_updated.emit(self.parent().ui.servo_status, "伺服控制：🟡 動作中...", "orange")
-            self.log_event("機械手臂夾取中...", "info")
-            if self.robot_arm.pickup_object():
-                self.log_event("機械手臂夾取成功", "info")
-                self.log_event(f"機械手臂放置到區域 {target_zone}...", "info")
-                if self.robot_arm.place_object_in_zone(target_zone):
-                    self.log_event("機械手臂放置成功", "info")
-                else:
-                    self.log_event("機械手臂放置失敗", "error")
-            else:
-                self.log_event("機械手臂夾取失敗", "error")
-
+            self.robot_arm.pickup_object()
+            self.robot_arm.place_object_in_zone(target_zone)
             self.status_updated.emit(self.parent().ui.servo_status, "伺服控制：🟢 就緒", "green")
 
-            # 更新統計數據顯示
             self.update_stats_display()
-
-            # 等待下一個產品
             time.sleep(2)
 
         self.finished.emit()
@@ -178,23 +204,19 @@ class AutomationWorker(QThread):
         pixmap = QPixmap(image_path)
         self.image_updated.emit(pixmap)
 
-    def draw_detections(self, image_path, detections):
+    def draw_detections_on_image(self, image_path, detections):
         img = cv2.imread(image_path)
         for det in detections:
-            label = det['label']
-            confidence = det['confidence']
-            x1, y1, x2, y2 = det['bbox']
+            label, confidence, bbox = det['label'], det['confidence'], det['bbox']
+            x1, y1, x2, y2 = bbox
             cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.putText(img, f"{label} {confidence:.2f}", (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-        # Convert to QPixmap
         rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(qt_image)
-        self.image_updated.emit(pixmap)
+        qt_image = QImage(rgb_image.data, w, h, ch * w, QImage.Format_RGB888)
+        self.image_updated.emit(QPixmap.fromImage(qt_image))
 
     def update_stats_display(self):
         self.stats['rate'] = (self.stats['pass'] / self.stats['total'] * 100) if self.stats['total'] > 0 else 0
@@ -212,36 +234,23 @@ class PCBAMainWindow(QMainWindow):
         self.is_conveyor_on = False
 
     def init_modules(self):
-        # --- 初始化後端模組 ---
         self.update_status_label(self.ui.system_status, "系統狀態：🟡 初始化中...", "orange")
 
-        # 初始化 YOLO Detector
         if not os.path.exists(YOLO_WEIGHTS_PATH):
-            self.update_status_label(self.ui.system_status, f"系統狀態：🔴 錯誤 - 找不到模型檔案", "red")
-            print(f"錯誤：找不到模型檔案 '{YOLO_WEIGHTS_PATH}'")
+            self.update_status_label(self.ui.system_status, f"系統狀態：🔴 錯誤 - 找不到模型", "red")
             self.detector = None
         else:
             self.detector = YOLOv12Detector(weights_path=YOLO_WEIGHTS_PATH, device=DEVICE)
 
-        # 初始化輸送帶
-        self.conveyor = ConveyorControl(
-            port=CONVEYOR_SERIAL_PORT,
-            baudrate=CONVEYOR_BAUDRATE,
-            control_pins=CONVEYOR_GPIO_PINS,
-            control_type=CONVEYOR_CONTROL_TYPE
-        )
+        self.conveyor = ConveyorControl(port=CONVEYOR_SERIAL_PORT, baudrate=CONVEYOR_BAUDRATE,
+                                     control_pins=CONVEYOR_GPIO_PINS, control_type=CONVEYOR_CONTROL_TYPE)
         self.conveyor.connect()
 
-        # 初始化機械手臂
-        self.robot_arm = RobotArmControl(
-            joint_pins=ARM_JOINT_PINS,
-            gripper_pin=ARM_GRIPPER_PIN,
-            pwm_lib_type=ARM_PWM_LIB_TYPE
-        )
+        self.robot_arm = RobotArmControl(joint_pins=ARM_JOINT_PINS, gripper_pin=ARM_GRIPPER_PIN,
+                                       pwm_lib_type=ARM_PWM_LIB_TYPE)
 
-        # 初始化自動化工作線程
         self.worker = AutomationWorker(self.detector, self.conveyor, self.robot_arm)
-        self.worker.setParent(self) # 讓 worker 可以存取主視窗
+        self.worker.setParent(self)
         self.worker.status_updated.connect(self.update_status_label)
         self.worker.image_updated.connect(self.update_image_display)
         self.worker.log_added.connect(self.add_log_entry)
@@ -251,7 +260,6 @@ class PCBAMainWindow(QMainWindow):
         self.update_status_label(self.ui.system_status, "系統狀態：🟢 就緒", "green")
         print("所有模組初始化完成。")
 
-    # --- GUI 事件處理 ---
     def start_auto_detection(self):
         if self.detector is None:
             print("無法啟動，YOLO 模型未載入。")
@@ -281,8 +289,7 @@ class PCBAMainWindow(QMainWindow):
 
     def update_servo(self, value):
         self.ui.servo_value.setText(f"{value}°")
-        # 這裡我們只控制基座 (joint 0) 作為範例
-        self.robot_arm.set_joint_angle(0, value - 90) # 將 0-180 映射到 -90-90
+        self.robot_arm.set_joint_angle(0, value - 90)
 
     def toggle_conveyor(self):
         if self.is_conveyor_on:
@@ -296,24 +303,17 @@ class PCBAMainWindow(QMainWindow):
         self.is_conveyor_on = not self.is_conveyor_on
 
     def reset_system(self):
-        print("🔃 系統重設...")
         self.conveyor.stop()
         self.robot_arm.move_to_named_position("home")
         self.update_status_label(self.ui.system_status, "系統狀態：🟢 就緒", "green")
-        self.update_status_label(self.ui.conveyor_status, "輸送帶狀態：🟢 停止", "green")
-        self.update_status_label(self.ui.servo_status, "伺服控制：🟢 就緒", "green")
-        print("系統已重設至初始狀態。")
 
     def closeEvent(self, event):
-        print("正在關閉應用程式...")
-        self.stop_auto_detection() # 確保線程停止
-        self.worker.wait() # 等待線程完全結束
+        self.stop_auto_detection()
+        self.worker.wait()
         self.conveyor.disconnect()
         self.robot_arm.cleanup()
-        print("資源已清理，應用程式關閉。")
         event.accept()
 
-    # --- GUI 更新輔助函式 ---
     def update_status_label(self, label, text, color):
         label.setText(text)
         label.setStyleSheet(f"color: {color}; font-weight: bold;")
@@ -323,10 +323,10 @@ class PCBAMainWindow(QMainWindow):
         self.ui.image_display.setPixmap(scaled_pixmap)
 
     def add_log_entry(self, log_data):
-        row_position = self.ui.log_table.rowCount()
-        self.ui.log_table.insertRow(row_position)
+        row_pos = self.ui.log_table.rowCount()
+        self.ui.log_table.insertRow(row_pos)
         for col, data in enumerate(log_data):
-            self.ui.log_table.setItem(row_position, col, QTableWidgetItem(str(data)))
+            self.ui.log_table.setItem(row_pos, col, QTableWidgetItem(str(data)))
         self.ui.log_table.scrollToBottom()
 
     def update_stats(self, stats):
@@ -337,13 +337,11 @@ class PCBAMainWindow(QMainWindow):
 
 
 if __name__ == '__main__':
-    # 創建圖片保存目錄
-    if not os.path.exists("live_captured_images"):
-        os.makedirs("live_captured_images")
-    # 創建權重目錄提示
-    if not os.path.exists("weights"):
-        os.makedirs("weights")
-        print("已創建 'weights' 文件夾，請將您的 'best.pt' 模型檔案放入其中。")
+    for folder in ["live_captured_images", "processed_images", "weights"]:
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+    if not os.path.exists(YOLO_WEIGHTS_PATH):
+         print(f"警告：找不到模型 '{YOLO_WEIGHTS_PATH}'。請將權重檔案放入 'weights' 資料夾。")
 
     app = QApplication(sys.argv)
     window = PCBAMainWindow()
