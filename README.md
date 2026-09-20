@@ -235,7 +235,7 @@ UNO 5V            ──▶  感測器 VCC
 - **模型檔**：`best.pt`
 - **辨識類別**：
   - `mouse_bite` / `mousebite` → 鼠咬
-  - `open_circuit` / `open` / `break` → 斷路
+  - `open_circuit` / `開放` / `break` → 斷路
   - `copper` / `copper_contamination` → 雜銅
 - **預設信心閾值**：0.5（可於系統設定調整）
 
@@ -293,7 +293,7 @@ Jetson 環境支援 GPIO 直接控制，提供更低延遲的感測器響應。
 | Python | ≥ 3.8 | 執行環境 |
 | PyQt5 | ≥ 5.15 | GUI 介面 |
 | opencv-python | ≥ 4.5 | 影像處理 |
-| ultralytics | latest | YOLOv12 推論 |
+| ultralytics | 最新 | YOLOv12 推論 |
 | pyserial | ≥ 3.5 | Arduino 串口通訊 |
 | numpy | ≥ 1.21 | 數值運算 |
 
@@ -317,13 +317,13 @@ Jetson 環境支援 GPIO 直接控制，提供更低延遲的感測器響應。
 
 ## 📄 授權
 
-本專案為學術研究用途，相關演算法與硬體整合方案由 **南台科技大學** 研究團隊開發。
+本專案為學術研究用途，相關演算法與硬體整合方案由 **南台科技大學學生陳治齊** 開發。
 
 ---
 
 <div align="center">
 
-**南台科技大學 · 機電整合研究**  
+**南台科技大學 · 資訊工程系**  
 PCB Defect Detection System v4.0
 
 </div>
