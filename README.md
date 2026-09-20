@@ -21,11 +21,11 @@
 
 ---
 
-## 📖 Overview
+## 📖 概覽
 
 This system is designed for PCB quality control in production environments. It integrates deep learning inference with robotic arm automation to perform real-time detection and sorting of three PCB defect categories:
 
-| Defect Type | Description |
+| Defect Type |描述|
 |-------------|-------------|
 | 🐭 **Mouse Bite** | Missing copper at the edge of a PCB caused by drill punch-outs |
 | ⚡ **Open Circuit** | Broken trace preventing proper current flow |
